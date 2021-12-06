@@ -47,7 +47,7 @@
 
 ``` shell
 User --> VPS Security Group --> syslog ---> Iptables ---> Service(SSH/WEB)
-                        			|          ^
+                        		  |          ^
                         		  v          |
                         			 -----> KnockD  
 ```
