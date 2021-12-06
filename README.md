@@ -133,6 +133,165 @@ Last login: Thu Dec  2 15:16:00 2021 from 124.64.x.x
 
 ------
 
+
+
+## 0x05 服务器安装配置KnockD
+
+* 安装KnockD
+
+``` shell
+sudo apt install knockd
+```
+
+``` shell 
+Reading package lists... Done
+Building dependency tree
+Reading state information... Done
+The following NEW packages will be installed:
+  knockd
+0 upgraded, 1 newly installed, 0 to remove and 0 not upgraded.
+Need to get 24.7 kB of archives.
+After this operation, 103 kB of additional disk space will be used.
+Get:1 http://ap-east-1.ec2.archive.ubuntu.com/ubuntu focal-updates/universe amd64 knockd amd64 0.7-1ubuntu3.20.04.1 [24.7 kB]
+Fetched 24.7 kB in 0s (56.9 kB/s)
+Selecting previously unselected package knockd.
+(Reading database ... 95349 files and directories currently installed.)
+Preparing to unpack .../knockd_0.7-1ubuntu3.20.04.1_amd64.deb ...
+Unpacking knockd (0.7-1ubuntu3.20.04.1) ...
+Setting up knockd (0.7-1ubuntu3.20.04.1) ...
+Processing triggers for man-db (2.9.1-1) ...
+Processing triggers for systemd (245.4-4ubuntu3.13) ...
+```
+
+* 修改配置身份认证序列
+``` shell
+sudo vi /etc/knockd.conf
+```
+
+``` shell
+[options]
+    LogFile       = /var/log/knockd.log
+    # 根据 ifconfig 返回的网卡接口名称填写，默认是eth0
+    Interface     = ens5
+
+[opencloseSSH]
+    # 端口序列要尽量随机化，不能递增或递减，防止被扫描时碰撞上。
+    # 端口可以使用UDP、TCP 或者 UDP+TCP协议
+    sequence      = 50022:UDP,59000:UDP,58324:UDP,53333:UDP
+    seq_timeout   = 15
+    tcpflags      = syn
+    start_command = /sbin/iptables -A INPUT -s %IP% -p tcp --dport 22 -j ACCEPT
+    cmd_timeout   = 30
+    # 在开放防火墙后，等待30秒，若用户端没有动作，则删除该规则
+    stop_command  = /sbin/iptables -D INPUT -s %IP% -p tcp --dport 22 -j ACCEPT
+
+```
+
+* 开/关防护脚本
+
+``` shell
+vi start-guard.sh
+```
+
+``` shell
+#!/bin/bash
+# 默认禁止进站请求
+iptables -P INPUT DROP
+# 放行已建立的连接
+iptables -I INPUT 1 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+# 添加一个白名单IP，预防配置错误导致服务器无法连接
+iptables -I INPUT 2 -s 白名单IP -j ACCEPT
+# 放行DNS回包
+iptables -A INPUT -p udp -m udp --dport 53 -j ACCEPT
+
+/etc/init.d/knockd restart
+```
+
+
+``` shell
+vi stop-guard.sh
+```
+
+``` shell
+#!/bin/bash
+iptables -P INPUT ACCEPT
+iptables -D INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+iptables -D INPUT -s 白名单IP -j ACCEPT
+iptables -D INPUT -p udp -m udp --dport 53 -j ACCEPT
+
+/etc/init.d/knockd stop
+```
+
+``` shell
+chmod +x start-guard.sh stop-guard.sh
+```
+
+
+
+## 0x06 配置云VPS安全规则
+
+在云的安全组规则中配置，UDP协议50000-60000端口允许所有来源访问，作为我们的身份认证端口。其他要对外提供服务的端口一并放开。仅在iptables 中对要使用的端口进行访问控制。
+
+![vps-rule](./vps-rule.png)
+
+
+
+## 0x07 客户端安装配置
+* 客户端同样需要安装 knock
+``` shell
+# mac 环境
+brew install knock
+```
+
+* 编写访问服务器的认证脚本内容
+
+``` shell
+vi openhk.sh
+chmod +x openhk.sh
+```
+
+``` shell
+#!/bin/bash
+
+# 申请访问22端口，
+# 为保证脚本的复用性，保证端口号是4位，前面用0补足
+./open.sh 18.162.x.x 0022
+ssh -i ~/.ssh/hk-key.pem ubuntu@18.162.x.x
+```
+
+``` shell
+vi open.sh
+chmod +x open.sh
+```
+
+``` shell
+#!/bin/bash
+
+usage()
+{
+    echo "IP and Port are required as the parameter！"
+    echo "Usage:${0} 192.168.0.1 0080"
+}
+
+open_port()
+{
+    knock -v -d 100 -u ${1} 5${2} 59000 58324 53333
+}
+
+if [ $# -ne 2 ];
+then
+    usage
+    exit
+fi
+
+echo "openning!"
+open_port $1 $2
+echo "You can access the port now!"
+```
+
+------
+
+
 ## 特别说明
 
 * 不建议对管理员的来源IP开放全部端口，会失去云平台安全组的第一层防护。
