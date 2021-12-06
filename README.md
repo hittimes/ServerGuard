@@ -49,7 +49,7 @@
 User --> VPS Security Group --> syslog ---> Iptables ---> Service(SSH/WEB)
                         		  |          ^
                         		  v          |
-                        			 -----> KnockD  
+                        		  -----> KnockD  
 ```
 
 1. 使用VPS的安全组规则限制入站流量，仅开放必须的端口。
